@@ -1,0 +1,5 @@
+interface:
+  display_name: "Research Tree"
+  short_description: "Build and maintain traceable bilingual research reasoning"
+  brand_color: "#173A4D"
+  default_prompt: "Use $research-tree to add this research update without losing prior reasoning."

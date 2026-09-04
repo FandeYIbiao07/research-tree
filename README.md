@@ -35,6 +35,10 @@ Every node stores both languages in one JSON document. The first property must b
 
 See [docs/architecture.md](docs/architecture.md) for the complete design and [examples/example-node.json](examples/example-node.json) for a valid node.
 
+## Codex skill
+
+The reusable skill is included at [`skills/research-tree`](skills/research-tree). Copy that directory to `$CODEX_HOME/skills/research-tree` (or `~/.codex/skills/research-tree` when `CODEX_HOME` is unset), then invoke it as `$research-tree` or let Codex select it automatically for Research Tree work.
+
 ## Privacy
 
 The repository contains only a fictional community-library example. It does not include private research content, deployment identifiers, browser storage, local filesystem paths, or the source application's Git history.

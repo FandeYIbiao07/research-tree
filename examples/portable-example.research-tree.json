@@ -1,0 +1,67 @@
+{
+  "fileType": "research-tree",
+  "formatVersion": 1,
+  "documentId": "example-portable-tree",
+  "savedAt": "2026-01-12T10:00:00.000Z",
+  "viewState": {
+    "language": "zh",
+    "activePanel": "graph",
+    "viewport": {
+      "x": 72,
+      "y": 48,
+      "zoom": 0.8
+    }
+  },
+  "tree": {
+    "schemaVersion": 2,
+    "project": {
+      "id": "example-portable-tree",
+      "title": {
+        "en": "Portable Research Example",
+        "zh": "可移植研究示例"
+      },
+      "researchQuestion": {
+        "en": "Can the same reasoning workspace be restored on another computer?",
+        "zh": "同一推理工作区能否在另一台电脑上恢复？"
+      }
+    },
+    "nodes": [
+      {
+        "languageType": "en-zh",
+        "id": "e-portability",
+        "type": "evidence",
+        "status": "confirmed",
+        "content": {
+          "en": {
+            "title": "The complete document was imported",
+            "summary": "Content and view state were restored from one file.",
+            "notes": "The file includes all graph collections and layout state.",
+            "source": "Import verification",
+            "assumptions": []
+          },
+          "zh": {
+            "title": "完整文档已导入",
+            "summary": "内容与视图状态均从同一个文件恢复。",
+            "notes": "该文件包含全部图谱集合与布局状态。",
+            "source": "导入验证",
+            "assumptions": []
+          }
+        },
+        "createdAt": "2026-01-12T09:00:00.000Z",
+        "updatedAt": "2026-01-12T09:00:00.000Z",
+        "end": "end"
+      }
+    ],
+    "edges": [],
+    "logicSpots": [],
+    "positions": {
+      "e-portability": {
+        "x": 220,
+        "y": 180
+      }
+    },
+    "collapsedNodeIds": [],
+    "decisionLog": []
+  },
+  "end": "end"
+}

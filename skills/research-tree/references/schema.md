@@ -93,3 +93,26 @@ The spot and its parent become:
 | NONE | all false | at least one true | blue/yellow |
 | NOT | sole input false | sole input true | blue/yellow |
 | K OF N | at least K true | even all unresolved inputs could not reach K | blue/yellow |
+
+## Portable tree document
+
+Use one `.research-tree.json` file per tree. The root object has this ordered shape:
+
+```text
+fileType: "research-tree"
+formatVersion: 1
+documentId: stable tree identity
+savedAt: ISO timestamp
+viewState:
+  language: en | zh
+  activePanel: graph | log
+  viewport: { x, y, zoom }
+tree:
+  schemaVersion, project, nodes, edges, logicSpots,
+  positions, collapsedNodeIds, decisionLog
+end: "end"
+```
+
+`positions`, `collapsedNodeIds`, and `viewState.viewport` are required for the same layout to reopen on another computer. The nodes remain full ordered node JSON objects inside `tree.nodes`.
+
+The device-local workspace may contain several documents and one `activeDocumentId`. Importing a file whose `documentId` is already open replaces that document with the imported revision; a new ID adds a new open tree.

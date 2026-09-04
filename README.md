@@ -12,7 +12,9 @@ Research Tree is a lightweight bilingual reasoning workspace for long-running re
 - Search and type/status filters
 - Chronological decision log
 - English/Chinese display switching
-- Local-first persistence, with one ordered JSON document per node
+- Multiple open trees with fast tab switching
+- Portable `.research-tree.json` files that restore content, history, layout, language, and viewport on another computer
+- Automatic migration from the earlier single-tree browser storage
 
 ## Run locally
 
@@ -31,9 +33,11 @@ pnpm build
 
 ## Data contract
 
-Every node stores both languages in one JSON document. The first property must be `languageType`, and the final property must be `end` with the value `"end"`. The UI reads the selected language and displays one language at a time.
+Every node stores both languages in one JSON object. The first property must be `languageType`, and the final property must be `end` with the value `"end"`. The UI reads the selected language and displays one language at a time.
 
-See [docs/architecture.md](docs/architecture.md) for the complete design and [examples/example-node.json](examples/example-node.json) for a valid node.
+Use **Save file** to export the active tree, then **Open file** on another computer. A document with a new `documentId` opens as another tree; importing the same `documentId` updates the matching open tree.
+
+See [docs/architecture.md](docs/architecture.md) for the complete design, [examples/example-node.json](examples/example-node.json) for a valid node, and [examples/portable-example.research-tree.json](examples/portable-example.research-tree.json) for a complete portable tree.
 
 ## Codex skill
 

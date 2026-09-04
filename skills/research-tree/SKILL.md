@@ -37,4 +37,12 @@ Use a logic spot only when a parent question or claim is explicitly computed fro
 
 Do not use semantic links such as `supports` as a substitute for the logic rule. The parent-to-spot relation means “verified by this rule”; every spot-to-child relation means “independent input”. If inputs depend on each other, model those dependencies separately and do not describe them as independent.
 
-Read [references/schema.md](references/schema.md) when generating, validating, importing, exporting, or repairing JSON, or when deciding the exact truth-state propagation of a logic spot. Use `scripts/validate_node_json.py` to validate exported node files before handing them off.
+## Work with complete tree files
+
+- Use `.research-tree.json` for movement between computers. One file must contain the complete tree, all nodes and edges, logic spots, positions, collapsed branches, decision log, active language, active panel, and graph viewport.
+- Treat `documentId` as the stable identity of a tree. Importing the same ID updates that open tree; importing a different ID opens another tree alongside it.
+- Keep each node's `languageType` first and `end` last even when the node is nested inside a complete tree file.
+- Export the active tree before removing it from a device-local workspace when the user may need it later.
+- Do not merge two different tree files implicitly. Preserve both as separate open trees unless the user explicitly requests a merge.
+
+Read [references/schema.md](references/schema.md) when generating, validating, importing, exporting, or repairing JSON, or when deciding the exact truth-state propagation of a logic spot. Use `scripts/validate_node_json.py` for individual nodes and `scripts/validate_tree_file.py` for complete portable tree files.

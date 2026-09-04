@@ -1,18 +1,37 @@
 export const NODE_TYPES = [
-  'evidence', 'idea', 'hypothesis', 'assumption',
-  'judgement', 'decision', 'openQuestion', 'rejectedBranch',
+  'evidence',
+  'idea',
+  'hypothesis',
+  'assumption',
+  'judgement',
+  'decision',
+  'openQuestion',
+  'rejectedBranch',
 ] as const;
 
 export const NODE_STATUSES = [
-  'confirmed', 'tentative', 'needsVerification', 'rejected', 'supersededReopened',
+  'confirmed',
+  'tentative',
+  'needsVerification',
+  'rejected',
+  'supersededReopened',
 ] as const;
 
 export const RELATIONSHIP_TYPES = [
-  'supports', 'contradicts', 'modifies', 'replaces', 'dependsOn',
+  'supports',
+  'contradicts',
+  'modifies',
+  'replaces',
+  'dependsOn',
 ] as const;
 
 export const LOGIC_SPOT_TYPES = [
-  'any', 'all', 'exactlyOne', 'none', 'not', 'atLeastK',
+  'any',
+  'all',
+  'exactlyOne',
+  'none',
+  'not',
+  'atLeastK',
 ] as const;
 
 export type LanguageType = 'en-zh';
@@ -69,16 +88,27 @@ export type LogicSpot = {
 export type DecisionLogEntry = {
   id: string;
   nodeId: string;
-  action: 'created' | 'updated' | 'statusChanged' | 'impact' | 'relationship' | 'logicSpot';
+  action:
+    | 'created'
+    | 'updated'
+    | 'statusChanged'
+    | 'impact'
+    | 'relationship'
+    | 'logicSpot';
   summary: LocalizedText;
   timestamp: string;
 };
 
 export type Position = { x: number; y: number };
+export type GraphViewport = { x: number; y: number; zoom: number };
 
 export type ResearchProjectState = {
   schemaVersion: 2;
-  project: { id: string; title: LocalizedText; researchQuestion: LocalizedText };
+  project: {
+    id: string;
+    title: LocalizedText;
+    researchQuestion: LocalizedText;
+  };
   nodes: ResearchNode[];
   edges: ResearchEdge[];
   logicSpots: LogicSpot[];
@@ -87,8 +117,36 @@ export type ResearchProjectState = {
   decisionLog: DecisionLogEntry[];
 };
 
+export type ResearchTreeViewState = {
+  language: Language;
+  activePanel: 'graph' | 'log';
+  viewport: GraphViewport;
+};
+
+/** Portable, self-contained file shared between computers. */
+export type ResearchTreeDocument = {
+  fileType: 'research-tree';
+  formatVersion: 1;
+  documentId: string;
+  savedAt: string;
+  viewState: ResearchTreeViewState;
+  tree: ResearchProjectState;
+  end: 'end';
+};
+
+export type ResearchTreeWorkspace = {
+  schemaVersion: 1;
+  activeDocumentId: string;
+  documents: ResearchTreeDocument[];
+};
+
 export const emptyContent = (): LocalizedNodeContent => ({
-  title: '', summary: '', notes: '', source: '', assumptions: [],
+  title: '',
+  summary: '',
+  notes: '',
+  source: '',
+  assumptions: [],
 });
 
-export const nodeText = (node: ResearchNode, language: Language) => node.content[language];
+export const nodeText = (node: ResearchNode, language: Language) =>
+  node.content[language];

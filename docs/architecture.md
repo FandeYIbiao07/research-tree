@@ -7,7 +7,7 @@ Research Tree makes the history of reasoning inspectable. A new conclusion may r
 ## Modules
 
 - `lib/research-tree/types.ts` defines the graph and bilingual data contracts.
-- `lib/research-tree/repository.ts` provides a small repository interface and the local-storage implementation.
+- `lib/research-tree/repository.ts` validates portable files, migrates earlier storage, and provides the multi-document local workspace.
 - `lib/research-tree/sample-data.ts` provides fictional demonstration data.
 - `components/research-tree-app.tsx` coordinates graph interaction, filtering, search, editing, tracing, node-type rendering, formal-logic junctions, and the decision log.
 
@@ -65,16 +65,36 @@ Supported operators:
 - `not`: the single input is not confirmed
 - `atLeastK`: at least `threshold` inputs are confirmed
 
-## Persistence
+## Portable document
 
-The local repository stores project metadata separately from nodes. Each node is serialized individually so the JSON boundary rules are preserved:
+Each `.research-tree.json` file is a complete, versioned document:
+
+```text
+fileType, formatVersion, documentId, savedAt,
+viewState { language, activePanel, viewport },
+tree { project, nodes, edges, logicSpots, positions,
+       collapsedNodeIds, decisionLog },
+end
+```
+
+The document contains everything needed to reconstruct the same reasoning workspace on another computer. Node positions and collapsed branches preserve graph layout; `viewState` preserves the selected language, graph/log panel, pan position, and zoom level.
+
+Each nested node is serialized with the JSON boundary rules:
 
 1. `languageType` is written first.
 2. English and Chinese content are stored together under `content`.
 3. `end: "end"` is written last.
 
-Local-storage keys are versioned with the `research-tree.*.v2` namespace. Generated state is not committed to this repository.
+## Multi-tree workspace
+
+The browser stores a versioned workspace under the `research-tree.workspace.v3` namespace. It contains an ordered collection of documents and one `activeDocumentId`; every stored document appears as a switchable tab.
+
+- New tree: creates a new stable `documentId`.
+- Open file with a new ID: adds a tab.
+- Open file with an existing ID: updates that tab, supporting manual A/B computer synchronization.
+- Remove tree: removes only the active local document and leaves other trees intact.
+- Earlier single-tree v1/v2 browser data: migrates automatically into the first document without deleting the legacy keys.
 
 ## Future cloud sync
 
-A cloud adapter should implement the same three operations as the local repository: `load`, `save`, and `reset`. Synchronization should use stable node and edge IDs, preserve timestamps and superseded nodes, and treat conflicts as new review events rather than silently overwriting reasoning history.
+A cloud adapter should implement the same workspace load/save contract. Synchronization should use stable document, node, and edge IDs, preserve timestamps and superseded nodes, and treat conflicts as new review events rather than silently overwriting reasoning history.

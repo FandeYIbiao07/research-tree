@@ -1,0 +1,29 @@
+{
+  "languageType": "en-zh",
+  "id": "e-weekend-counts",
+  "type": "evidence",
+  "status": "confirmed",
+  "content": {
+    "en": {
+      "title": "Weekend capacity is repeatedly reached",
+      "summary": "Four consecutive weekends show peak-hour entries at capacity.",
+      "notes": "This supports unmet demand but does not prove every added hour will be used.",
+      "source": "Illustrative entrance counts, weeks 1–4",
+      "assumptions": [
+        "The counting method is consistent across weekends."
+      ]
+    },
+    "zh": {
+      "title": "周末容量反复达到上限",
+      "summary": "连续四个周末的高峰时段入馆人数均达到容量上限。",
+      "notes": "这支持未满足需求的判断，但不能证明每个新增时段都会被使用。",
+      "source": "示例入馆统计，第1至4周",
+      "assumptions": [
+        "各周末采用一致的统计方法。"
+      ]
+    }
+  },
+  "createdAt": "2026-01-06T09:30:00.000Z",
+  "updatedAt": "2026-01-06T09:30:00.000Z",
+  "end": "end"
+}

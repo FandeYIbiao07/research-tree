@@ -2301,7 +2301,7 @@ export default function ResearchTreeApp() {
             >
               <div className="flex h-full min-h-0">
                 {filtersOpen && (
-                  <aside className="z-10 w-[272px] shrink-0 border-r border-slate-200 bg-[#f8fafb] p-4 max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:shadow-xl">
+                  <aside className="relative z-10 flex min-h-0 w-[272px] shrink-0 flex-col gap-4 overflow-y-auto border-r border-slate-200 bg-[#f8fafb] p-4 max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:shadow-xl">
                     <div className="mb-4 flex items-center justify-between">
                       <div className="flex items-center gap-2 text-sm font-bold text-[#1d3545]">
                         <Filter className="size-4" />
@@ -2391,7 +2391,7 @@ export default function ResearchTreeApp() {
                         {t.resetDemo}
                       </Button>
                     </div>
-                    <div className="absolute bottom-4 left-4 right-4 rounded-lg border border-slate-200 bg-white p-3">
+                    <div className="mt-auto shrink-0 rounded-lg border border-slate-200 bg-white p-3">
                       <p className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
                         {t.projectQuestion}
                       </p>

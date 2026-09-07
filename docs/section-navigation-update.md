@@ -4,4 +4,6 @@ The live workspace contained custom historical action names outside the short li
 
 Background blocks now form a persistent section navigation strip in file order. Each button clears transient filters and focuses the block entrance at 85% zoom. The Overview button fits the canvas. Names and color marks match the corresponding backgrounds; layout, lock and layer controls remain available. This is visual navigation and never creates reasoning relationships. The five-domain HOI4 document stays in its separate local project, not this repository or deployment archive.
 
+Live QA also found that React Flow retained the old viewport after importing the same document ID. A successful import now remounts the canvas so the imported viewport is used; invalid imports do not reset the current view.
+
 Validation: 13 data tests, including the actual local workspace with its custom actions and a private research file supplied through environment paths, passed without publishing the fixtures. Type checking and lint passed. Live browser acceptance is recorded in the consuming HOI4 project after deployment.

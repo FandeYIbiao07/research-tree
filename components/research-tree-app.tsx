@@ -1032,6 +1032,7 @@ export default function ResearchTreeApp() {
   const [layersOpen, setLayersOpen] = useState(false);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
   const flowRef = useRef<ReactFlowInstance | null>(null);
+  const [canvasImportRevision, setCanvasImportRevision] = useState(0);
   const [storageError, setStorageError] = useState('');
   const [savedWorkspace, setSavedWorkspace] =
     useState<ResearchTreeWorkspace | null>(null);
@@ -1761,6 +1762,8 @@ export default function ResearchTreeApp() {
           serializeResearchTreeDocument(previousDocument),
         );
       setWorkspace((previous) => upsertDocument(previous, nextDocument));
+      // React Flow only reads defaultViewport on mount, including same-ID imports.
+      setCanvasImportRevision((revision) => revision + 1);
       setQuery('');
       setTypeFilter('all');
       setStatusFilter('all');
@@ -2457,7 +2460,7 @@ export default function ResearchTreeApp() {
                   )}
                   {flowNodes.length ? (
                     <ReactFlow
-                      key={activeDocument.documentId}
+                      key={`${activeDocument.documentId}:${canvasImportRevision}`}
                       nodes={flowNodes}
                       edges={flowEdges}
                       onInit={(instance) => {

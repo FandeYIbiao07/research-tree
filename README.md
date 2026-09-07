@@ -12,7 +12,9 @@ Research Tree is a lightweight bilingual reasoning workspace for long-running re
 - Search and type/status filters
 - Chronological decision log
 - English/Chinese display switching
-- Multiple open trees with fast tab switching
+- Multiple open trees with fast tab switching, reversible closing and a Reopen list
+- Named bilingual background blocks, resize/colour/lock controls, and a back-to-front layer panel
+- Field-level import errors, legacy file migration, and protection against overwriting a damaged local workspace
 - Portable `.research-tree.json` files that restore content, history, layout, language, and viewport on another computer
 - Automatic migration from the earlier single-tree browser storage
 
@@ -46,3 +48,18 @@ The reusable skill is included at [`skills/research-tree`](skills/research-tree)
 ## Privacy
 
 The repository contains only a fictional community-library example. It does not include private research content, deployment identifiers, browser storage, local filesystem paths, or the source application's Git history.
+
+
+## Checks
+
+```bash
+pnpm install --frozen-lockfile
+pnpm test
+pnpm lint
+pnpm exec tsc --noEmit
+python skills/research-tree/scripts/validate_tree_file.py examples/portable-example.research-tree.json
+```
+
+For browser regressions start the dev server and run `node tests/ui-regression.mjs` using an installed Playwright module/browser. Optional environment variables: `PLAYWRIGHT_MODULE` (module path), `PLAYWRIGHT_CHANNEL` (browser channel), `RESEARCH_TREE_URL` (defaults to localhost port 5173), and `RESEARCH_TREE_FIXTURE` (private fixture kept outside this repository). Private fixture tests expect a 94-node compatibility case and are skipped when unset. Never commit private fixtures or generated screenshots.
+
+The canonical file contract and compatibility policy are in the bundled skill's schema. Change notes and regression coverage are in [docs/import-canvas-update.md](docs/import-canvas-update.md).

@@ -1,6 +1,16 @@
 'use client';
 
 import '@xyflow/react/dist/style.css';
+import {
+  BackgroundCard,
+  CanvasPanel,
+  canvasOrder,
+} from './research-tree-canvas';
+import {
+  closeDocument,
+  reopenDocument,
+  upsertDocument,
+} from '@/lib/research-tree/workspace';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -16,6 +26,7 @@ import {
   type NodeProps,
   type NodeTypes,
   type Viewport,
+  type ReactFlowInstance,
 } from '@xyflow/react';
 import {
   ArrowLeftRight,
@@ -33,6 +44,7 @@ import {
   FolderPlus,
   GitBranch,
   Languages,
+  Layers,
   Lightbulb,
   Link2,
   Network,
@@ -254,7 +266,28 @@ function applyLogicStatuses(state: ResearchProjectState): ResearchProjectState {
       return spot ? { ...node, status: evaluateLogic(spot, nodes) } : node;
     });
   }
-  return { ...state, nodes };
+  const changed = nodes.filter(
+    (node, i) => node.status !== state.nodes[i].status,
+  );
+  if (!changed.length) return { ...state, nodes };
+  const now = new Date().toISOString();
+  return {
+    ...state,
+    nodes,
+    decisionLog: [
+      ...state.decisionLog,
+      ...changed.map((node) => ({
+        id: crypto.randomUUID(),
+        nodeId: node.id,
+        action: 'statusChanged' as const,
+        summary: localized(
+          `Logic recalculated: ${state.nodes.find((n) => n.id === node.id)?.status} → ${node.status}`,
+          `逻辑重算：${state.nodes.find((n) => n.id === node.id)?.status} → ${node.status}`,
+        ),
+        timestamp: now,
+      })),
+    ],
+  };
 }
 
 type ResearchCardData = {
@@ -426,7 +459,11 @@ function LogicCard({ data, selected }: NodeProps<FlowNode<LogicCardData>>) {
   );
 }
 
-const flowNodeTypes: NodeTypes = { research: ResearchCard, logic: LogicCard };
+const flowNodeTypes: NodeTypes = {
+  research: ResearchCard,
+  logic: LogicCard,
+  background: BackgroundCard,
+};
 type NodeDraft = Pick<ResearchNode, 'type' | 'status' | 'content'>;
 const blankDraft = (): NodeDraft => ({
   type: 'idea',
@@ -984,12 +1021,32 @@ export default function ResearchTreeApp() {
       })),
     };
   });
+  const [emptyDocument] = useState(() =>
+    createBlankResearchTreeDocument(
+      localized('No open tree', '没有打开的研究树'),
+      localized('', ''),
+      'zh',
+    ),
+  );
+  const hasDocument = workspace.documents.length > 0;
+  const [layersOpen, setLayersOpen] = useState(false);
+  const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
+  const flowRef = useRef<ReactFlowInstance | null>(null);
+  const [storageError, setStorageError] = useState('');
+  const [savedWorkspace, setSavedWorkspace] =
+    useState<ResearchTreeWorkspace | null>(null);
+  const saving = savedWorkspace !== workspace;
+  const [reopenOpen, setReopenOpen] = useState(false);
   const activeDocument =
     workspace.documents.find(
       (document) => document.documentId === workspace.activeDocumentId,
-    ) ?? workspace.documents[0];
+    ) ??
+    workspace.documents[0] ??
+    emptyDocument;
   const state = activeDocument.tree;
-  const language = activeDocument.viewState.language;
+  const language = hasDocument
+    ? activeDocument.viewState.language
+    : (workspace.closedDocuments?.[0]?.viewState.language ?? 'zh');
   const activeTab = activeDocument.viewState.activePanel;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedSpotId, setSelectedSpotId] = useState<string | null>(null);
@@ -1015,7 +1072,26 @@ export default function ResearchTreeApp() {
   }, []);
   /* oxlint-enable react/react-compiler */
   useEffect(() => {
-    if (hydrated) researchTreeRepository.saveWorkspace(workspace);
+    if (!hydrated) return;
+    const persist = () => {
+      try {
+        researchTreeRepository.saveWorkspace(workspace);
+        setStorageError('');
+      } catch (error) {
+        setStorageError(error instanceof Error ? error.message : String(error));
+      }
+      setSavedWorkspace(workspace);
+    };
+    const timer = setTimeout(persist, 250);
+    const flush = () => {
+      clearTimeout(timer);
+      persist();
+    };
+    window.addEventListener('pagehide', flush);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('pagehide', flush);
+    };
   }, [hydrated, workspace]);
   useEffect(() => {
     document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en';
@@ -1037,7 +1113,22 @@ export default function ResearchTreeApp() {
     (updater: (previous: ResearchProjectState) => ResearchProjectState) =>
       updateActiveDocument((document) => ({
         ...document,
-        tree: updater(document.tree),
+        tree: (() => {
+          const next = updater(document.tree);
+          if (!next.canvas) return next;
+          const ids = new Set([
+            ...next.nodes.map((n) => n.id),
+            ...next.logicSpots.map((s) => s.id),
+            ...next.canvas.backgroundBlocks.map((b) => b.id),
+          ]);
+          return {
+            ...next,
+            canvas: {
+              ...next.canvas,
+              layerOrder: next.canvas.layerOrder.filter((id) => ids.has(id)),
+            },
+          };
+        })(),
       })),
     [updateActiveDocument],
   );
@@ -1065,6 +1156,14 @@ export default function ResearchTreeApp() {
     setSelectedSpotId(null);
     setTraceIds(null);
     setFileError('');
+    setQuery('');
+    setTypeFilter('all');
+    setStatusFilter('all');
+    setSelectedLayerId(null);
+    setNodeEditorOpen(false);
+    setLogicOpen(false);
+    setRelationshipOpen(false);
+    setLayersOpen(false);
   };
   const selected = state.nodes.find((node) => node.id === selectedId) ?? null;
   const selectedSpot =
@@ -1170,16 +1269,32 @@ export default function ResearchTreeApp() {
           traceActive: Boolean(traceIds),
         } satisfies LogicCardData,
       }));
-    return [...research, ...logic];
+    const order = canvasOrder(state);
+    const blocks: FlowNode[] = (state.canvas?.backgroundBlocks ?? []).map(
+      (block) => ({
+        id: block.id,
+        type: 'background',
+        position: state.positions[block.id] ?? { x: 0, y: 0 },
+        style: { width: block.width, height: block.height },
+        width: block.width,
+        height: block.height,
+        dragHandle: '.block-drag-handle',
+        draggable: !block.locked,
+        selectable: true,
+        data: { block, language },
+      }),
+    );
+    return [...blocks, ...research, ...logic].map((node) => ({
+      ...node,
+      zIndex: order.indexOf(node.id) - blocks.length,
+      selected: node.id === selectedLayerId,
+    }));
   }, [
     hiddenIds,
     language,
     matchedIds,
-    state.collapsedNodeIds,
-    state.edges,
-    state.logicSpots,
-    state.nodes,
-    state.positions,
+    state,
+    selectedLayerId,
     toggleCollapse,
     traceIds,
   ]);
@@ -1478,6 +1593,18 @@ export default function ResearchTreeApp() {
     );
   };
   const deleteSelection = () => {
+    if (
+      selectedId &&
+      state.logicSpots.some((spot) => spot.inputNodeIds.includes(selectedId))
+    ) {
+      setFileError(
+        language === 'zh'
+          ? '此节点是形式逻辑的输入。请先移除或修改相关逻辑点，再删除节点。'
+          : 'This node is a formal input. Remove or update its logic rule before deleting the node.',
+      );
+      setDeleteOpen(false);
+      return;
+    }
     if (selectedSpotId) {
       updateState((previous) => {
         const spot = previous.logicSpots.find(
@@ -1526,9 +1653,19 @@ export default function ResearchTreeApp() {
           collapsedNodeIds: previous.collapsedNodeIds.filter(
             (id) => id !== selectedId,
           ),
-          decisionLog: previous.decisionLog.filter(
-            (entry) => entry.nodeId !== selectedId,
-          ),
+          decisionLog: [
+            ...previous.decisionLog,
+            {
+              id: crypto.randomUUID(),
+              nodeId: selectedId!,
+              action: 'updated',
+              summary: localized(
+                'Node removed from the canvas; its reasoning history is retained.',
+                '节点已从画布移除，相关推理历史仍保留。',
+              ),
+              timestamp: new Date().toISOString(),
+            },
+          ],
         }),
       );
       setSelectedId(null);
@@ -1613,25 +1750,30 @@ export default function ResearchTreeApp() {
         ...imported,
         tree: applyLogicStatuses(imported.tree),
       };
-      setWorkspace((previous) => ({
-        schemaVersion: 1,
-        activeDocumentId: nextDocument.documentId,
-        documents: previous.documents.some(
-          (document) => document.documentId === nextDocument.documentId,
-        )
-          ? previous.documents.map((document) =>
-              document.documentId === nextDocument.documentId
-                ? nextDocument
-                : document,
-            )
-          : [...previous.documents, nextDocument],
-      }));
+      // Keep the previous revision recoverable before a same-ID import.
+      const previousDocument = [
+        ...workspace.documents,
+        ...(workspace.closedDocuments ?? []),
+      ].find((d) => d.documentId === nextDocument.documentId);
+      if (previousDocument && !workspace.loadError)
+        localStorage.setItem(
+          'research-tree.import-backup.' + nextDocument.documentId,
+          serializeResearchTreeDocument(previousDocument),
+        );
+      setWorkspace((previous) => upsertDocument(previous, nextDocument));
+      setQuery('');
+      setTypeFilter('all');
+      setStatusFilter('all');
+      setSelectedLayerId(null);
+      setLayersOpen(false);
       setSelectedId(null);
       setSelectedSpotId(null);
       setTraceIds(null);
       setFileError('');
-    } catch {
-      setFileError(t.invalidTreeFile);
+    } catch (error) {
+      setFileError(
+        `${t.invalidTreeFile} ${error instanceof Error ? error.message : String(error)}`,
+      );
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
@@ -1647,16 +1789,7 @@ export default function ResearchTreeApp() {
           activeDocumentId: remaining[0].documentId,
           documents: remaining,
         };
-      const fallback = createBlankResearchTreeDocument(
-        localized('Untitled research', '未命名研究'),
-        localized('', ''),
-        language,
-      );
-      return {
-        schemaVersion: 1,
-        activeDocumentId: fallback.documentId,
-        documents: [fallback],
-      };
+      return { ...previous, activeDocumentId: '', documents: [] };
     });
     setSelectedId(null);
     setSelectedSpotId(null);
@@ -1821,6 +1954,9 @@ export default function ResearchTreeApp() {
     impact: t.logImpact,
     relationship: t.logRelationship,
     logicSpot: t.logLogicSpot,
+    logicSpotCreated: t.logLogicSpot,
+    impactRecorded: t.logImpact,
+    replaced: language === 'zh' ? '已取代' : 'Replaced',
   };
   const typeOptions = ['all', ...NODE_TYPES] as const;
   const statusOptions = ['all', ...NODE_STATUSES] as const;
@@ -1878,7 +2014,15 @@ export default function ResearchTreeApp() {
               className="hidden gap-1.5 bg-emerald-50 text-emerald-700 xl:flex"
             >
               <span className="size-2 rounded-full bg-emerald-500" />
-              {t.localSaved}
+              {storageError || workspace.loadError
+                ? language === 'zh'
+                  ? '本机保存失败'
+                  : 'Local save failed'
+                : saving
+                  ? language === 'zh'
+                    ? '正在保存…'
+                    : 'Saving…'
+                  : t.localSaved}
             </Badge>
             <div className="flex items-center rounded-lg border bg-white p-0.5">
               <Languages className="ml-1.5 size-4 text-slate-500" />
@@ -1919,25 +2063,60 @@ export default function ResearchTreeApp() {
             className="flex min-w-0 flex-1 gap-1 overflow-x-auto py-1"
           >
             {workspace.documents.map((document) => (
-              <button
+              <div
                 key={document.documentId}
-                role="tab"
-                aria-selected={
-                  document.documentId === activeDocument.documentId
-                }
-                className={cn(
-                  'max-w-[230px] shrink-0 truncate rounded-md border px-3 py-1.5 text-xs font-semibold transition',
-                  document.documentId === activeDocument.documentId
-                    ? 'border-[#2c6677] bg-white text-[#173a4d] shadow-sm'
-                    : 'border-transparent text-slate-600 hover:border-slate-300 hover:bg-white/70',
-                )}
-                onClick={() => switchDocument(document.documentId)}
+                className="flex shrink-0 items-center rounded-md bg-white/50"
               >
-                {document.tree.project.title[language]}
-              </button>
+                <button
+                  role="tab"
+                  aria-selected={
+                    document.documentId === activeDocument.documentId
+                  }
+                  className={cn(
+                    'max-w-[230px] shrink-0 truncate rounded-md border px-3 py-1.5 text-xs font-semibold transition',
+                    document.documentId === activeDocument.documentId
+                      ? 'border-[#2c6677] bg-white text-[#173a4d] shadow-sm'
+                      : 'border-transparent text-slate-600 hover:border-slate-300 hover:bg-white/70',
+                  )}
+                  onClick={() => switchDocument(document.documentId)}
+                >
+                  {document.tree.project.title[language]}
+                </button>
+                <button
+                  className="rounded p-1.5 text-slate-500 hover:bg-slate-200"
+                  aria-label={`${language === 'zh' ? '关闭标签' : 'Close tab'}: ${document.tree.project.title[language]}`}
+                  title={
+                    language === 'zh'
+                      ? '关闭并保留在本机'
+                      : 'Close and keep locally'
+                  }
+                  onClick={() => {
+                    setWorkspace((previous) =>
+                      closeDocument(previous, document.documentId),
+                    );
+                    if (document.documentId === activeDocument.documentId) {
+                      setSelectedId(null);
+                      setSelectedSpotId(null);
+                      setSelectedLayerId(null);
+                      setLayersOpen(false);
+                    }
+                  }}
+                >
+                  <X className="size-3.5" />
+                </button>
+              </div>
             ))}
           </div>
           <div className="flex shrink-0 items-center gap-1">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setReopenOpen(true)}
+              disabled={!workspace.closedDocuments?.length}
+            >
+              {language === 'zh' ? '重新打开' : 'Reopen'} (
+              {workspace.closedDocuments?.length ?? 0})
+            </Button>
             <Button
               size="sm"
               variant="outline"
@@ -1963,6 +2142,7 @@ export default function ResearchTreeApp() {
               variant="outline"
               className="bg-white"
               title={t.saveTree}
+              disabled={!hasDocument}
               onClick={exportTree}
             >
               <Download />
@@ -1973,6 +2153,7 @@ export default function ResearchTreeApp() {
               variant="ghost"
               className="text-slate-500 hover:text-red-600"
               title={t.removeTree}
+              disabled={!hasDocument}
               onClick={() => setRemoveTreeOpen(true)}
             >
               <Trash2 />
@@ -1994,308 +2175,509 @@ export default function ResearchTreeApp() {
             </button>
           </div>
         )}
-        <Tabs
-          value={activeTab}
-          onValueChange={setActiveTab}
-          className="flex min-h-0 flex-1 flex-col gap-0"
-        >
-          <div className="flex h-[56px] shrink-0 items-center justify-between border-b border-slate-200 bg-white px-3 lg:px-5">
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => setFiltersOpen((open) => !open)}
-                aria-label={t.filters}
-              >
-                {filtersOpen ? <PanelLeftClose /> : <PanelLeftOpen />}
-              </Button>
-              <TabsList>
-                <TabsTrigger value="graph">
-                  <Network />
-                  {t.graph}
-                </TabsTrigger>
-                <TabsTrigger value="log">
-                  <Clock3 />
-                  {t.log}
-                </TabsTrigger>
-              </TabsList>
-            </div>
-            <div className="flex items-center gap-2">
-              {traceIds && (
+        {(storageError || workspace.loadError) && (
+          <div
+            role="alert"
+            className="border-b border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+          >
+            {language === 'zh'
+              ? '本机数据未覆盖。请导出备份后检查：'
+              : 'Local data has not been overwritten. Export a backup and check: '}
+            {storageError || workspace.loadError}
+            <Button
+              variant="outline"
+              size="sm"
+              className="ml-3"
+              onClick={() => {
+                const raw = localStorage.getItem('research-tree.workspace.v3');
+                if (!raw) return;
+                const url = URL.createObjectURL(
+                  new Blob([raw], { type: 'application/json' }),
+                );
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'research-tree-workspace-recovery.json';
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+            >
+              {language === 'zh'
+                ? '导出原始工作区'
+                : 'Export original workspace'}
+            </Button>
+          </div>
+        )}
+        {hasDocument ? (
+          <Tabs
+            value={activeTab}
+            onValueChange={setActiveTab}
+            className="flex min-h-0 flex-1 flex-col gap-0"
+          >
+            <div className="flex h-[56px] shrink-0 items-center justify-between border-b border-slate-200 bg-white px-3 lg:px-5">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => setFiltersOpen((open) => !open)}
+                  aria-label={t.filters}
+                >
+                  {filtersOpen ? <PanelLeftClose /> : <PanelLeftOpen />}
+                </Button>
+                <TabsList>
+                  <TabsTrigger value="graph">
+                    <Network />
+                    {t.graph}
+                  </TabsTrigger>
+                  <TabsTrigger value="log">
+                    <Clock3 />
+                    {t.log}
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+              <div className="flex items-center gap-2">
+                {traceIds && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setTraceIds(null)}
+                  >
+                    <X />
+                    {t.clearTrace}
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => setTraceIds(null)}
+                  onClick={() => setLayersOpen(!layersOpen)}
                 >
-                  <X />
-                  {t.clearTrace}
+                  <Layers />
+                  {language === 'zh' ? '背景与图层' : 'Backgrounds & layers'}
                 </Button>
-              )}
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setLogicOpen(true)}
-              >
-                <Sigma />
-                <span className="hidden md:inline">{t.addLogicSpot}</span>
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setRelationshipOpen(true)}
-              >
-                <Link2 />
-                <span className="hidden sm:inline">{t.connect}</span>
-              </Button>
-              <Button
-                size="sm"
-                className="bg-[#173a4d] hover:bg-[#214d64]"
-                onClick={() => {
-                  setEditingId(null);
-                  setNodeEditorOpen(true);
-                }}
-              >
-                <Plus />
-                <span className="hidden sm:inline">{t.addNode}</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setLogicOpen(true)}
+                >
+                  <Sigma />
+                  <span className="hidden md:inline">{t.addLogicSpot}</span>
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setRelationshipOpen(true)}
+                >
+                  <Link2 />
+                  <span className="hidden sm:inline">{t.connect}</span>
+                </Button>
+                <Button
+                  size="sm"
+                  className="bg-[#173a4d] hover:bg-[#214d64]"
+                  onClick={() => {
+                    setEditingId(null);
+                    setNodeEditorOpen(true);
+                  }}
+                >
+                  <Plus />
+                  <span className="hidden sm:inline">{t.addNode}</span>
+                </Button>
+              </div>
+            </div>
+            <TabsContent
+              value="graph"
+              className="relative m-0 min-h-0 flex-1 overflow-hidden"
+            >
+              <div className="flex h-full min-h-0">
+                {filtersOpen && (
+                  <aside className="z-10 w-[272px] shrink-0 border-r border-slate-200 bg-[#f8fafb] p-4 max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:shadow-xl">
+                    <div className="mb-4 flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-sm font-bold text-[#1d3545]">
+                        <Filter className="size-4" />
+                        {t.filters}
+                      </div>
+                      <span className="text-xs font-medium text-slate-500">
+                        {matchedIds.size} {t.nodesVisible}
+                      </span>
+                    </div>
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+                      <Input
+                        className="bg-white pl-8"
+                        value={query}
+                        onChange={(event) => setQuery(event.target.value)}
+                        placeholder={t.search}
+                      />
+                    </div>
+                    <p className="mt-2 text-xs leading-5 text-slate-500">
+                      {t.filterHint}
+                    </p>
+                    <Separator className="my-4" />
+                    <div className="grid gap-4">
+                      <div className="grid gap-2">
+                        <Label>{t.nodeType}</Label>
+                        <AppSelect
+                          value={typeFilter}
+                          onValueChange={setTypeFilter}
+                          options={typeOptions}
+                          labels={typeLabels}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>{t.status}</Label>
+                        <AppSelect
+                          value={statusFilter}
+                          onValueChange={setStatusFilter}
+                          options={statusOptions}
+                          labels={statusFilterLabels}
+                        />
+                      </div>
+                    </div>
+                    <Separator className="my-4" />
+                    <div className="grid gap-2">
+                      <Button
+                        variant="outline"
+                        className="justify-start bg-white"
+                        onClick={() =>
+                          updateState((previous) => ({
+                            ...previous,
+                            collapsedNodeIds: previous.nodes
+                              .filter(
+                                (node) =>
+                                  previous.edges.some(
+                                    (edge) => edge.sourceNodeId === node.id,
+                                  ) ||
+                                  previous.logicSpots.some(
+                                    (spot) => spot.parentNodeId === node.id,
+                                  ),
+                              )
+                              .map((node) => node.id),
+                          }))
+                        }
+                      >
+                        <ChevronRight />
+                        {t.collapseAll}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="justify-start bg-white"
+                        onClick={() =>
+                          updateState((previous) => ({
+                            ...previous,
+                            collapsedNodeIds: [],
+                          }))
+                        }
+                      >
+                        <ChevronDown />
+                        {t.expandAll}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        className="mt-2 justify-start text-slate-500"
+                        onClick={() => setResetOpen(true)}
+                      >
+                        <RotateCcw />
+                        {t.resetDemo}
+                      </Button>
+                    </div>
+                    <div className="absolute bottom-4 left-4 right-4 rounded-lg border border-slate-200 bg-white p-3">
+                      <p className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
+                        {t.projectQuestion}
+                      </p>
+                      <p className="mt-1 line-clamp-4 text-sm leading-5 text-slate-700">
+                        {state.project.researchQuestion[language]}
+                      </p>
+                    </div>
+                  </aside>
+                )}
+                <section className="relative min-w-0 flex-1 bg-[#edf2f4]">
+                  {layersOpen && (
+                    <CanvasPanel
+                      state={state}
+                      language={language}
+                      selectedId={selectedLayerId}
+                      onSelect={setSelectedLayerId}
+                      onChange={updateState}
+                      onClose={() => setLayersOpen(false)}
+                      onAdd={() => {
+                        const id = crypto.randomUUID();
+                        const viewport =
+                          flowRef.current?.getViewport() ??
+                          activeDocument.viewState.viewport;
+                        updateState((previous) => ({
+                          ...previous,
+                          positions: {
+                            ...previous.positions,
+                            [id]: {
+                              x: (80 - viewport.x) / viewport.zoom,
+                              y: (80 - viewport.y) / viewport.zoom,
+                            },
+                          },
+                          canvas: {
+                            backgroundBlocks: [
+                              ...(previous.canvas?.backgroundBlocks ?? []),
+                              {
+                                id,
+                                title: localized('Background block', '背景块'),
+                                color: '#6b9eaa',
+                                width: 680,
+                                height: 460,
+                                locked: false,
+                              },
+                            ],
+                            layerOrder: [id, ...canvasOrder(previous)],
+                          },
+                        }));
+                        setSelectedLayerId(id);
+                      }}
+                    />
+                  )}
+                  {flowNodes.length ? (
+                    <ReactFlow
+                      key={activeDocument.documentId}
+                      nodes={flowNodes}
+                      edges={flowEdges}
+                      onInit={(instance) => {
+                        flowRef.current = instance;
+                      }}
+                      elevateNodesOnSelect={false}
+                      nodesConnectable={false}
+                      deleteKeyCode={null}
+                      onNodesChange={(changes) => {
+                        if (
+                          !changes.some(
+                            (c) =>
+                              (c.type === 'position' && c.position) ||
+                              (c.type === 'dimensions' &&
+                                c.resizing &&
+                                c.dimensions),
+                          )
+                        )
+                          return;
+                        updateState((previous) => {
+                          const positions = { ...previous.positions };
+                          let blocks = previous.canvas?.backgroundBlocks ?? [];
+                          let changed = false;
+                          for (const change of changes) {
+                            if (change.type === 'position' && change.position) {
+                              positions[change.id] = change.position;
+                              changed = true;
+                            }
+                            if (
+                              change.type === 'dimensions' &&
+                              change.resizing &&
+                              change.dimensions
+                            ) {
+                              const size = change.dimensions;
+                              blocks = blocks.map((b) =>
+                                b.id === change.id
+                                  ? {
+                                      ...b,
+                                      width: Math.max(160, size.width),
+                                      height: Math.max(160, size.height),
+                                    }
+                                  : b,
+                              );
+                              changed = true;
+                            }
+                          }
+                          return changed
+                            ? {
+                                ...previous,
+                                positions,
+                                canvas: {
+                                  backgroundBlocks: blocks,
+                                  layerOrder: canvasOrder(previous),
+                                },
+                              }
+                            : previous;
+                        });
+                      }}
+                      nodeTypes={flowNodeTypes}
+                      defaultViewport={activeDocument.viewState.viewport}
+                      minZoom={0.08}
+                      maxZoom={1.7}
+                      onMoveEnd={(_, viewport) => setViewport(viewport)}
+                      onNodeClick={(_, node) => {
+                        setSelectedLayerId(node.id);
+                        if (node.type === 'background') {
+                          setLayersOpen(true);
+                          setSelectedId(null);
+                          setSelectedSpotId(null);
+                          return;
+                        }
+                        if (layersOpen) return;
+                        if (node.type === 'logic') {
+                          setSelectedSpotId(node.id);
+                          setSelectedId(null);
+                        } else {
+                          setSelectedId(node.id);
+                          setSelectedSpotId(null);
+                        }
+                      }}
+                      onNodeDragStop={(_, node) =>
+                        updateState((previous) => ({
+                          ...previous,
+                          positions: {
+                            ...previous.positions,
+                            [node.id]: node.position,
+                          },
+                        }))
+                      }
+                    >
+                      <Background color="#cbd5dc" gap={22} size={1} />
+                      <Controls
+                        position="bottom-right"
+                        className="!overflow-hidden !rounded-lg !border-slate-200 !shadow-md"
+                      />
+                      <MiniMap
+                        position="bottom-left"
+                        nodeColor={(node) =>
+                          node.type === 'background'
+                            ? '#b5cbd2'
+                            : node.type === 'logic'
+                              ? '#334155'
+                              : STATUS_STYLE[
+                                  (node.data as unknown as ResearchCardData)
+                                    .node.status
+                                ].color
+                        }
+                        maskColor="rgba(232,238,241,.75)"
+                        className="!border !border-slate-200 !bg-white !shadow-md"
+                      />
+                    </ReactFlow>
+                  ) : (
+                    <div className="grid h-full place-items-center">
+                      <div className="text-center text-slate-500">
+                        <FileSearch className="mx-auto mb-3 size-8" />
+                        <p className="text-sm font-medium">{t.noResults}</p>
+                      </div>
+                    </div>
+                  )}
+                  <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-lg border border-white/70 bg-white/85 px-3 py-1.5 text-xs font-medium text-slate-500 shadow-sm backdrop-blur">
+                    {t.canvasHelp}
+                  </div>
+                </section>
+              </div>
+            </TabsContent>
+            <TabsContent
+              value="log"
+              className="m-0 min-h-0 flex-1 overflow-hidden bg-[#f2f5f6]"
+            >
+              <ScrollArea className="h-full">
+                <div className="mx-auto max-w-4xl px-5 py-8 lg:px-10">
+                  <div className="mb-7 flex items-end justify-between">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.12em] text-teal-700">
+                        {t.latestFirst}
+                      </p>
+                      <h2 className="mt-1 text-2xl font-bold tracking-tight text-[#173246]">
+                        {t.log}
+                      </h2>
+                    </div>
+                    <div className="text-right text-xs text-slate-500">
+                      {state.nodes.length} {t.nodeCount}
+                      <br />
+                      {state.edges.length + state.logicSpots.length}{' '}
+                      {t.relationshipCount}
+                    </div>
+                  </div>
+                  <ol className="relative border-l border-slate-300 pl-7">
+                    {[...state.decisionLog]
+                      .sort(
+                        (a, b) =>
+                          +new Date(b.timestamp) - +new Date(a.timestamp),
+                      )
+                      .map((entry) => {
+                        const node = nodeById(entry.nodeId);
+                        return (
+                          <li
+                            key={entry.id}
+                            className="relative mb-5 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+                          >
+                            <span className="absolute -left-[35px] top-5 size-3.5 rounded-full border-2 border-white bg-[#2c7780] ring-1 ring-slate-300" />
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <Badge
+                                  variant="outline"
+                                  className="bg-slate-50"
+                                >
+                                  {actionLabels[entry.action]}
+                                </Badge>
+                                {node && (
+                                  <button
+                                    className="text-xs font-semibold text-[#265b70] hover:underline"
+                                    onClick={() => {
+                                      setSelectedId(node.id);
+                                      setActiveTab('graph');
+                                    }}
+                                  >
+                                    {nodeText(node, language).title}
+                                  </button>
+                                )}
+                              </div>
+                              <time className="text-xs text-slate-500">
+                                {formatDate(entry.timestamp, language)}
+                              </time>
+                            </div>
+                            <p className="mt-3 text-sm leading-6 text-slate-700">
+                              {entry.summary[language]}
+                            </p>
+                          </li>
+                        );
+                      })}
+                  </ol>
+                </div>
+              </ScrollArea>
+            </TabsContent>
+          </Tabs>
+        ) : (
+          <div className="grid flex-1 place-items-center">
+            <div className="max-w-md space-y-4 p-6 text-center">
+              <Network className="mx-auto size-10 text-slate-500" />
+              <h2 className="text-xl font-semibold">
+                {language === 'zh' ? '没有打开的研究树' : 'No open trees'}
+              </h2>
+              <p className="text-sm text-slate-500">
+                {language === 'zh'
+                  ? '关闭的研究树仍保存在本机，可以从“重新打开”恢复，也可以导入或新建研究树。'
+                  : 'Closed trees are kept locally. Reopen one, import a file, or create a new tree.'}
+              </p>
+              <Button onClick={() => fileInputRef.current?.click()}>
+                {t.openTree}
               </Button>
             </div>
           </div>
-          <TabsContent
-            value="graph"
-            className="relative m-0 min-h-0 flex-1 overflow-hidden"
-          >
-            <div className="flex h-full min-h-0">
-              {filtersOpen && (
-                <aside className="z-10 w-[272px] shrink-0 border-r border-slate-200 bg-[#f8fafb] p-4 max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:shadow-xl">
-                  <div className="mb-4 flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-sm font-bold text-[#1d3545]">
-                      <Filter className="size-4" />
-                      {t.filters}
-                    </div>
-                    <span className="text-xs font-medium text-slate-500">
-                      {matchedIds.size} {t.nodesVisible}
-                    </span>
-                  </div>
-                  <div className="relative">
-                    <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-                    <Input
-                      className="bg-white pl-8"
-                      value={query}
-                      onChange={(event) => setQuery(event.target.value)}
-                      placeholder={t.search}
-                    />
-                  </div>
-                  <p className="mt-2 text-xs leading-5 text-slate-500">
-                    {t.filterHint}
-                  </p>
-                  <Separator className="my-4" />
-                  <div className="grid gap-4">
-                    <div className="grid gap-2">
-                      <Label>{t.nodeType}</Label>
-                      <AppSelect
-                        value={typeFilter}
-                        onValueChange={setTypeFilter}
-                        options={typeOptions}
-                        labels={typeLabels}
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label>{t.status}</Label>
-                      <AppSelect
-                        value={statusFilter}
-                        onValueChange={setStatusFilter}
-                        options={statusOptions}
-                        labels={statusFilterLabels}
-                      />
-                    </div>
-                  </div>
-                  <Separator className="my-4" />
-                  <div className="grid gap-2">
-                    <Button
-                      variant="outline"
-                      className="justify-start bg-white"
-                      onClick={() =>
-                        updateState((previous) => ({
-                          ...previous,
-                          collapsedNodeIds: previous.nodes
-                            .filter(
-                              (node) =>
-                                previous.edges.some(
-                                  (edge) => edge.sourceNodeId === node.id,
-                                ) ||
-                                previous.logicSpots.some(
-                                  (spot) => spot.parentNodeId === node.id,
-                                ),
-                            )
-                            .map((node) => node.id),
-                        }))
-                      }
-                    >
-                      <ChevronRight />
-                      {t.collapseAll}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="justify-start bg-white"
-                      onClick={() =>
-                        updateState((previous) => ({
-                          ...previous,
-                          collapsedNodeIds: [],
-                        }))
-                      }
-                    >
-                      <ChevronDown />
-                      {t.expandAll}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      className="mt-2 justify-start text-slate-500"
-                      onClick={() => setResetOpen(true)}
-                    >
-                      <RotateCcw />
-                      {t.resetDemo}
-                    </Button>
-                  </div>
-                  <div className="absolute bottom-4 left-4 right-4 rounded-lg border border-slate-200 bg-white p-3">
-                    <p className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
-                      {t.projectQuestion}
-                    </p>
-                    <p className="mt-1 line-clamp-4 text-sm leading-5 text-slate-700">
-                      {state.project.researchQuestion[language]}
-                    </p>
-                  </div>
-                </aside>
-              )}
-              <section className="relative min-w-0 flex-1 bg-[#edf2f4]">
-                {flowNodes.length ? (
-                  <ReactFlow
-                    key={activeDocument.documentId}
-                    nodes={flowNodes}
-                    edges={flowEdges}
-                    nodeTypes={flowNodeTypes}
-                    defaultViewport={activeDocument.viewState.viewport}
-                    minZoom={0.24}
-                    maxZoom={1.7}
-                    onMoveEnd={(_, viewport) => setViewport(viewport)}
-                    onNodeClick={(_, node) => {
-                      if (node.type === 'logic') {
-                        setSelectedSpotId(node.id);
-                        setSelectedId(null);
-                      } else {
-                        setSelectedId(node.id);
-                        setSelectedSpotId(null);
-                      }
-                    }}
-                    onNodeDragStop={(_, node) =>
-                      updateState((previous) => ({
-                        ...previous,
-                        positions: {
-                          ...previous.positions,
-                          [node.id]: node.position,
-                        },
-                      }))
-                    }
-                  >
-                    <Background color="#cbd5dc" gap={22} size={1} />
-                    <Controls
-                      position="bottom-right"
-                      className="!overflow-hidden !rounded-lg !border-slate-200 !shadow-md"
-                    />
-                    <MiniMap
-                      position="bottom-left"
-                      nodeColor={(node) =>
-                        node.type === 'logic'
-                          ? '#334155'
-                          : STATUS_STYLE[
-                              (node.data as unknown as ResearchCardData).node
-                                .status
-                            ].color
-                      }
-                      maskColor="rgba(232,238,241,.75)"
-                      className="!border !border-slate-200 !bg-white !shadow-md"
-                    />
-                  </ReactFlow>
-                ) : (
-                  <div className="grid h-full place-items-center">
-                    <div className="text-center text-slate-500">
-                      <FileSearch className="mx-auto mb-3 size-8" />
-                      <p className="text-sm font-medium">{t.noResults}</p>
-                    </div>
-                  </div>
-                )}
-                <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-lg border border-white/70 bg-white/85 px-3 py-1.5 text-xs font-medium text-slate-500 shadow-sm backdrop-blur">
-                  {t.canvasHelp}
-                </div>
-              </section>
+        )}
+        <Dialog open={reopenOpen} onOpenChange={setReopenOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                {language === 'zh' ? '重新打开研究树' : 'Reopen a tree'}
+              </DialogTitle>
+              <DialogDescription>
+                {language === 'zh'
+                  ? '保存在这台设备上的已关闭研究树。'
+                  : 'Closed trees saved on this device.'}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="max-h-96 overflow-y-auto space-y-2">
+              {workspace.closedDocuments?.map((d) => (
+                <Button
+                  key={d.documentId}
+                  variant="outline"
+                  className="w-full justify-start truncate"
+                  onClick={() => {
+                    setWorkspace((previous) =>
+                      reopenDocument(previous, d.documentId),
+                    );
+                    setReopenOpen(false);
+                  }}
+                >
+                  {d.tree.project.title[language]}
+                </Button>
+              ))}
             </div>
-          </TabsContent>
-          <TabsContent
-            value="log"
-            className="m-0 min-h-0 flex-1 overflow-hidden bg-[#f2f5f6]"
-          >
-            <ScrollArea className="h-full">
-              <div className="mx-auto max-w-4xl px-5 py-8 lg:px-10">
-                <div className="mb-7 flex items-end justify-between">
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-[0.12em] text-teal-700">
-                      {t.latestFirst}
-                    </p>
-                    <h2 className="mt-1 text-2xl font-bold tracking-tight text-[#173246]">
-                      {t.log}
-                    </h2>
-                  </div>
-                  <div className="text-right text-xs text-slate-500">
-                    {state.nodes.length} {t.nodeCount}
-                    <br />
-                    {state.edges.length + state.logicSpots.length}{' '}
-                    {t.relationshipCount}
-                  </div>
-                </div>
-                <ol className="relative border-l border-slate-300 pl-7">
-                  {[...state.decisionLog]
-                    .sort(
-                      (a, b) => +new Date(b.timestamp) - +new Date(a.timestamp),
-                    )
-                    .map((entry) => {
-                      const node = nodeById(entry.nodeId);
-                      return (
-                        <li
-                          key={entry.id}
-                          className="relative mb-5 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
-                        >
-                          <span className="absolute -left-[35px] top-5 size-3.5 rounded-full border-2 border-white bg-[#2c7780] ring-1 ring-slate-300" />
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                              <Badge variant="outline" className="bg-slate-50">
-                                {actionLabels[entry.action]}
-                              </Badge>
-                              {node && (
-                                <button
-                                  className="text-xs font-semibold text-[#265b70] hover:underline"
-                                  onClick={() => {
-                                    setSelectedId(node.id);
-                                    setActiveTab('graph');
-                                  }}
-                                >
-                                  {nodeText(node, language).title}
-                                </button>
-                              )}
-                            </div>
-                            <time className="text-xs text-slate-500">
-                              {formatDate(entry.timestamp, language)}
-                            </time>
-                          </div>
-                          <p className="mt-3 text-sm leading-6 text-slate-700">
-                            {entry.summary[language]}
-                          </p>
-                        </li>
-                      );
-                    })}
-                </ol>
-              </div>
-            </ScrollArea>
-          </TabsContent>
-        </Tabs>
+          </DialogContent>
+        </Dialog>
         <Sheet
           open={Boolean(selected)}
           onOpenChange={(open) => {

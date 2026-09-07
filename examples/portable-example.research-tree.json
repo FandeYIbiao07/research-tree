@@ -58,10 +58,33 @@
       "e-portability": {
         "x": 220,
         "y": 180
+      },
+      "background-portability": {
+        "x": -40,
+        "y": -80
       }
     },
     "collapsedNodeIds": [],
-    "decisionLog": []
+    "decisionLog": [],
+    "canvas": {
+      "backgroundBlocks": [
+        {
+          "id": "background-portability",
+          "title": {
+            "en": "Portability checks",
+            "zh": "可移植性检查"
+          },
+          "color": "#6b9eaa",
+          "width": 680,
+          "height": 460,
+          "locked": false
+        }
+      ],
+      "layerOrder": [
+        "background-portability",
+        "e-portability"
+      ]
+    }
   },
   "end": "end"
 }

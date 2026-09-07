@@ -1,11 +1,8 @@
 'use client';
 
+import { validateDocument, migrateDocument } from './validation';
 import { sampleProject } from './sample-data';
 import {
-  LOGIC_SPOT_TYPES,
-  NODE_STATUSES,
-  NODE_TYPES,
-  RELATIONSHIP_TYPES,
   type Language,
   type LocalizedNodeContent,
   type LocalizedText,
@@ -160,6 +157,7 @@ function normalizeTree(tree: ResearchProjectState): ResearchProjectState {
     positions: clone(tree.positions),
     collapsedNodeIds: [...tree.collapsedNodeIds],
     decisionLog: clone(tree.decisionLog),
+    canvas: clone(tree.canvas ?? { backgroundBlocks: [], layerOrder: [] }),
   };
 }
 
@@ -178,7 +176,7 @@ function normalizeViewState(
         ? {
             x: viewport.x,
             y: viewport.y,
-            zoom: Math.max(0.24, Math.min(1.7, viewport.zoom)),
+            zoom: viewport.zoom,
           }
         : { ...DEFAULT_VIEW_STATE.viewport },
   };
@@ -222,151 +220,6 @@ export function createBlankResearchTreeDocument(
   );
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
-
-function validateDocument(
-  value: unknown,
-): asserts value is ResearchTreeDocument {
-  if (
-    !isRecord(value) ||
-    value.fileType !== 'research-tree' ||
-    value.formatVersion !== 1 ||
-    value.end !== 'end'
-  ) {
-    throw new Error('This is not a Research Tree file.');
-  }
-  if (Object.keys(value).at(-1) !== 'end')
-    throw new Error('The file end marker must be the final field.');
-  if (typeof value.documentId !== 'string' || !value.documentId.trim())
-    throw new Error('The file has no document ID.');
-  const tree = value.tree;
-  if (!isRecord(tree) || tree.schemaVersion !== 2 || !isRecord(tree.project))
-    throw new Error('The tree structure is invalid.');
-  const project = tree.project;
-  const projectTitle = project.title;
-  const projectQuestion = project.researchQuestion;
-  if (
-    !isRecord(projectTitle) ||
-    !isRecord(projectQuestion) ||
-    !['en', 'zh'].every(
-      (language) =>
-        typeof projectTitle[language] === 'string' &&
-        typeof projectQuestion[language] === 'string',
-    )
-  )
-    throw new Error('The bilingual project title or question is invalid.');
-  if (
-    !Array.isArray(tree.nodes) ||
-    !Array.isArray(tree.edges) ||
-    !Array.isArray(tree.logicSpots) ||
-    !Array.isArray(tree.decisionLog)
-  ) {
-    throw new Error('The tree collections are invalid.');
-  }
-  if (!isRecord(tree.positions) || !Array.isArray(tree.collapsedNodeIds))
-    throw new Error('The saved layout is invalid.');
-  const nodeIds = new Set<string>();
-  for (const rawNode of tree.nodes) {
-    if (!isRecord(rawNode)) throw new Error('A node is invalid.');
-    const keys = Object.keys(rawNode);
-    if (
-      keys[0] !== 'languageType' ||
-      keys.at(-1) !== 'end' ||
-      rawNode.languageType !== 'en-zh' ||
-      rawNode.end !== 'end'
-    ) {
-      throw new Error(
-        'A node does not follow the required JSON boundary order.',
-      );
-    }
-    if (typeof rawNode.id !== 'string' || nodeIds.has(rawNode.id))
-      throw new Error('Node IDs must be unique.');
-    if (
-      !NODE_TYPES.includes(rawNode.type as ResearchNode['type']) ||
-      !NODE_STATUSES.includes(rawNode.status as ResearchNode['status'])
-    ) {
-      throw new Error('A node type or status is invalid.');
-    }
-    if (
-      !isRecord(rawNode.content) ||
-      !isRecord(rawNode.content.en) ||
-      !isRecord(rawNode.content.zh)
-    ) {
-      throw new Error('Every node must contain English and Chinese content.');
-    }
-    for (const language of ['en', 'zh'] as const) {
-      const content = rawNode.content[language];
-      if (
-        !isRecord(content) ||
-        typeof content.title !== 'string' ||
-        !Array.isArray(content.assumptions)
-      )
-        throw new Error('A node has invalid bilingual content.');
-    }
-    nodeIds.add(rawNode.id);
-  }
-  for (const rawEdge of tree.edges) {
-    if (
-      !isRecord(rawEdge) ||
-      !nodeIds.has(String(rawEdge.sourceNodeId)) ||
-      !nodeIds.has(String(rawEdge.targetNodeId))
-    ) {
-      throw new Error('An edge references a missing node.');
-    }
-    if (
-      !RELATIONSHIP_TYPES.includes(
-        rawEdge.relationshipType as ResearchProjectState['edges'][number]['relationshipType'],
-      )
-    ) {
-      throw new Error('An edge relationship is invalid.');
-    }
-  }
-  for (const rawSpot of tree.logicSpots) {
-    if (
-      !isRecord(rawSpot) ||
-      !nodeIds.has(String(rawSpot.parentNodeId)) ||
-      !Array.isArray(rawSpot.inputNodeIds)
-    ) {
-      throw new Error('A logic spot is invalid.');
-    }
-    const spotKeys = Object.keys(rawSpot);
-    if (
-      spotKeys[0] !== 'languageType' ||
-      spotKeys.at(-1) !== 'end' ||
-      rawSpot.languageType !== 'en-zh' ||
-      rawSpot.end !== 'end'
-    )
-      throw new Error(
-        'A logic spot does not follow the required JSON boundary order.',
-      );
-    if (
-      !LOGIC_SPOT_TYPES.includes(
-        rawSpot.logicType as ResearchProjectState['logicSpots'][number]['logicType'],
-      )
-    ) {
-      throw new Error('A logic rule is invalid.');
-    }
-    if (!rawSpot.inputNodeIds.every((id) => nodeIds.has(String(id))))
-      throw new Error('A logic spot references a missing node.');
-  }
-  for (const position of Object.values(tree.positions)) {
-    if (
-      !isRecord(position) ||
-      !Number.isFinite(position.x) ||
-      !Number.isFinite(position.y)
-    )
-      throw new Error('A saved node position is invalid.');
-  }
-  if (
-    !tree.collapsedNodeIds.every(
-      (id) => typeof id === 'string' && nodeIds.has(id),
-    )
-  )
-    throw new Error('A collapsed branch references a missing node.');
-}
-
 function normalizeDocument(
   document: ResearchTreeDocument,
 ): ResearchTreeDocument {
@@ -385,7 +238,9 @@ function normalizeDocument(
 }
 
 export function parseResearchTreeDocument(json: string): ResearchTreeDocument {
-  const value: unknown = JSON.parse(json);
+  const value: unknown = migrateDocument(
+    JSON.parse(json.replace(/^\uFEFF/, '')),
+  );
   validateDocument(value);
   return normalizeDocument(value);
 }
@@ -410,19 +265,28 @@ function createDefaultWorkspace(): ResearchTreeWorkspace {
 function normalizeWorkspace(
   workspace: ResearchTreeWorkspace,
 ): ResearchTreeWorkspace {
-  const documents = workspace.documents.map((document) => {
-    validateDocument(document);
-    return normalizeDocument(document);
-  });
-  if (!documents.length) return createDefaultWorkspace();
+  if (workspace.schemaVersion !== 1 || !Array.isArray(workspace.documents))
+    throw new Error('workspace.documents: expected a workspace document list');
+  const documents = workspace.documents.map((document) =>
+    parseResearchTreeDocument(JSON.stringify(document)),
+  );
+  const closedDocuments = (workspace.closedDocuments ?? []).map((document) =>
+    parseResearchTreeDocument(JSON.stringify(document)),
+  );
+  const ids = [...documents, ...closedDocuments].map(
+    (document) => document.documentId,
+  );
+  if (new Set(ids).size !== ids.length)
+    throw new Error('workspace.documents: duplicate documentId');
   return {
     schemaVersion: 1,
     activeDocumentId: documents.some(
       (document) => document.documentId === workspace.activeDocumentId,
     )
       ? workspace.activeDocumentId
-      : documents[0].documentId,
+      : (documents[0]?.documentId ?? ''),
     documents,
+    closedDocuments,
   };
 }
 
@@ -489,14 +353,21 @@ export class LocalResearchTreeRepository implements ResearchTreeRepository {
         this.saveWorkspace(workspace);
         return workspace;
       }
-    } catch {
-      return createDefaultWorkspace();
+    } catch (error) {
+      return {
+        schemaVersion: 1,
+        activeDocumentId: '',
+        documents: [],
+        closedDocuments: [],
+        loadError: error instanceof Error ? error.message : String(error),
+      };
     }
     return createDefaultWorkspace();
   }
 
   saveWorkspace(workspace: ResearchTreeWorkspace) {
     if (typeof window === 'undefined') return;
+    if (workspace.loadError) throw new Error(workspace.loadError);
     window.localStorage.setItem(WORKSPACE_KEY, JSON.stringify(workspace));
   }
 

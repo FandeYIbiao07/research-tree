@@ -116,3 +116,61 @@ end: "end"
 `positions`, `collapsedNodeIds`, and `viewState.viewport` are required for the same layout to reopen on another computer. The nodes remain full ordered node JSON objects inside `tree.nodes`.
 
 The device-local workspace may contain several documents and one `activeDocumentId`. Importing a file whose `documentId` is already open replaces that document with the imported revision; a new ID adds a new open tree.
+
+
+## Project and decision log: required fields
+
+`tree.schemaVersion` is `2`. Use this project shape; **do not generate only `name` and `description`**:
+
+```json
+{
+  "id": "stable-project-id",
+  "title": {"en": "Research title", "zh": "研究标题"},
+  "researchQuestion": {"en": "What are we testing?", "zh": "我们要检验什么？"}
+}
+```
+
+Every decision log entry requires `id`, `nodeId`, `action`, bilingual `summary`, and `timestamp`:
+
+```json
+{
+  "id": "log-1",
+  "nodeId": "question-a",
+  "nodeIds": ["question-a", "evidence-b"],
+  "action": "impactRecorded",
+  "summary": {"en": "New evidence reopened the question.", "zh": "新证据使问题重新待验证。"},
+  "timestamp": "2026-01-12T10:00:00.000Z"
+}
+```
+
+`nodeId` is the primary UI anchor. Optional `nodeIds` retains every affected node, including historical nodes no longer present on the canvas. Never discard the log when a node is removed. Actions: `created`, `updated`, `statusChanged`, `impact`, `relationship`, `logicSpot`, `replaced`, `logicSpotCreated`, `impactRecorded`.
+
+The app recognizes legacy project `name`/`description` only when canonical fields are absent, copying their text into both language fields without pretending to translate. It derives missing log `nodeId` from the first `nodeIds` item and retains the full original array and action. Repair generated artifacts to the canonical shape with a snapshot and repair log. Existing malformed canonical fields are errors, not a reason to substitute legacy values.
+
+IDs must be non-empty and unique within their collections; nodes, logic spots and background blocks share a canvas ID namespace. Timestamps must be ISO values with a timezone. All content strings, assumptions, edge notes and log summaries are validated. Positions are finite numbers and must cover every canvas object; viewport zoom must be positive. NOT has exactly one input, K is an integer from 1 through N, other thresholds are null, each parent has at most one rule, and formal dependencies must be acyclic.
+
+## Background blocks and layers
+
+Optional `tree.canvas` stores decorative objects separately from reasoning:
+
+```json
+{
+  "backgroundBlocks": [{
+    "id": "background-a",
+    "title": {"en": "Evidence review", "zh": "证据复核"},
+    "color": "#6b9eaa",
+    "width": 680,
+    "height": 460,
+    "locked": false
+  }],
+  "layerOrder": ["background-a", "question-a", "spot-a"]
+}
+```
+
+Block position is `tree.positions[blockId]`. Width and height are finite and at least 160 canvas units. Colour is `#RRGGBB`. `layerOrder` lists existing node, logic spot and block IDs **back to front**, without duplicates; omitted objects are appended. Blocks do not imply support, causal relationships, formal inputs or group membership. Moving a block does not move nearby nodes. Lock prevents dragging/resizing; the layer panel remains available for unlocking. Preserve these fields when saving and round-tripping a tree.
+
+## Device workspace and closing
+
+Workspace storage remains `research-tree.workspace.v3`, with `schemaVersion: 1`, `documents`, `activeDocumentId`, and optional `closedDocuments`. Closing a tab moves its complete document into `closedDocuments`; Reopen restores it. An empty open list is valid and must stay empty after reload. Import of an existing ID reopens/updates that document, with the previous revision backed up locally before replacement. Closing a tab is distinct from deleting a tree.
+
+Failed imports leave the workspace unchanged and show the failing field. Failed workspace loads retain the original storage bytes and disable automatic replacement; use Export original workspace for recovery. Files are the portable backup; browser storage is device-local.

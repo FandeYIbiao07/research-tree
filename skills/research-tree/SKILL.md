@@ -42,7 +42,17 @@ Do not use semantic links such as `supports` as a substitute for the logic rule.
 - Use `.research-tree.json` for movement between computers. One file must contain the complete tree, all nodes and edges, logic spots, positions, collapsed branches, decision log, active language, active panel, and graph viewport.
 - Treat `documentId` as the stable identity of a tree. Importing the same ID updates that open tree; importing a different ID opens another tree alongside it.
 - Keep each node's `languageType` first and `end` last even when the node is nested inside a complete tree file.
+- Use the tab close button for reversible closing and Reopen to restore it. Do not use Delete as a substitute for Close.
 - Export the active tree before removing it from a device-local workspace when the user may need it later.
 - Do not merge two different tree files implicitly. Preserve both as separate open trees unless the user explicitly requests a merge.
 
 Read [references/schema.md](references/schema.md) when generating, validating, importing, exporting, or repairing JSON, or when deciding the exact truth-state propagation of a logic spot. Use `scripts/validate_node_json.py` for individual nodes and `scripts/validate_tree_file.py` for complete portable tree files.
+
+
+## Validate interoperability and layout
+
+- Generate `tree.project.id`, bilingual `title` and `researchQuestion`, and canonical `decisionLog.nodeId` as specified in the schema. `name`/`description` alone is not a valid project contract.
+- Preserve optional multi-node `nodeIds` and all historical actions; do not silently filter unsupported-looking history.
+- Use background blocks for visual regions only. Store them in `tree.canvas.backgroundBlocks`, their positions in `tree.positions`, and back-to-front order in `tree.canvas.layerOrder`. They are not reasoning nodes.
+- When repairing an import, keep the original file, validate the whole replacement, check IDs and history counts, then test import/export/reimport if an app is available. Report local validation separately from a verified live import.
+- Run `scripts/validate_tree_file.py` before delivering a portable file. Its validator covers project metadata, all bilingual content, logs, references, timestamps, logic rules, layout, blocks and layers.

@@ -88,19 +88,38 @@ export type LogicSpot = {
 export type DecisionLogEntry = {
   id: string;
   nodeId: string;
+  nodeIds?: string[];
   action:
     | 'created'
     | 'updated'
     | 'statusChanged'
     | 'impact'
     | 'relationship'
-    | 'logicSpot';
+    | 'logicSpot'
+    | 'replaced'
+    | 'logicSpotCreated'
+    | 'impactRecorded';
   summary: LocalizedText;
   timestamp: string;
 };
 
 export type Position = { x: number; y: number };
 export type GraphViewport = { x: number; y: number; zoom: number };
+
+/** Decorative canvas objects; they never participate in reasoning or logic. */
+export type BackgroundBlock = {
+  id: string;
+  title: LocalizedText;
+  color: string;
+  width: number;
+  height: number;
+  locked: boolean;
+};
+export type CanvasLayout = {
+  backgroundBlocks: BackgroundBlock[];
+  /** Back to front. Missing objects are appended by the renderer. */
+  layerOrder: string[];
+};
 
 export type ResearchProjectState = {
   schemaVersion: 2;
@@ -115,6 +134,7 @@ export type ResearchProjectState = {
   positions: Record<string, Position>;
   collapsedNodeIds: string[];
   decisionLog: DecisionLogEntry[];
+  canvas?: CanvasLayout;
 };
 
 export type ResearchTreeViewState = {
@@ -138,6 +158,9 @@ export type ResearchTreeWorkspace = {
   schemaVersion: 1;
   activeDocumentId: string;
   documents: ResearchTreeDocument[];
+  closedDocuments?: ResearchTreeDocument[];
+  /** Recovery state is session-only; failed loads must never overwrite storage. */
+  loadError?: string;
 };
 
 export const emptyContent = (): LocalizedNodeContent => ({

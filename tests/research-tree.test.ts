@@ -14,9 +14,28 @@ import {
   moveLayer,
 } from '../lib/research-tree/workspace';
 import type { ResearchTreeWorkspace } from '../lib/research-tree/types';
+import { reasoningBounds } from '../lib/research-tree/viewport';
 const fixture = () => createResearchTreeDocument();
 const roundtrip = (doc: unknown) =>
   parseResearchTreeDocument(JSON.stringify(doc));
+test('filtered reasoning fits independently of distant backgrounds and hidden nodes', () => {
+  const nodes = [
+    { id: 'background', type: 'background', position: { x: -1000, y: -500 }, width: 8000, height: 20000, data: {} },
+    { id: 'hidden', hidden: true, position: { x: -9000, y: -9000 }, width: 900, height: 900, data: {} },
+    { id: 'result', type: 'research', position: { x: 1990, y: 4340 }, measured: { width: 258, height: 185 }, data: {} },
+    { id: 'logic', type: 'logic', position: { x: 2400, y: 4400 }, width: 116, height: 116, data: {} },
+  ];
+  const before = structuredClone(nodes);
+  assert.deepEqual(reasoningBounds(nodes), { x: 1990, y: 4340, width: 526, height: 185 });
+  assert.deepEqual(reasoningBounds(nodes, new Set(['result'])), { x: 1990, y: 4340, width: 258, height: 185 });
+  assert.equal(reasoningBounds(nodes, new Set()), null);
+  assert.deepEqual(nodes, before);
+});
+test('empty results do not fit the decorative canvas and unmeasured cards have finite bounds', () => {
+  assert.equal(reasoningBounds([]), null);
+  assert.equal(reasoningBounds([{ id: 'bg', type: 'background', position: { x: 0, y: 0 }, width: 3000, height: 20000, data: {} }]), null);
+  assert.deepEqual(reasoningBounds([{ id: 'new', type: 'research', position: { x: -80, y: 90 }, data: {} }]), { x: -80, y: 90, width: 258, height: 240 });
+});
 test('canonical document preserves bilingual content, identities and history', () => {
   const d = fixture();
   assert.deepEqual(roundtrip(d).tree, d.tree);

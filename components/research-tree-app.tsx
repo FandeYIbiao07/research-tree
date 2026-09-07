@@ -11,11 +11,13 @@ import {
   reopenDocument,
   upsertDocument,
 } from '@/lib/research-tree/workspace';
+import { reasoningBounds } from '@/lib/research-tree/viewport';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Background,
   Controls,
+  ControlButton,
   Handle,
   MarkerType,
   MiniMap,
@@ -46,6 +48,7 @@ import {
   Languages,
   Layers,
   Lightbulb,
+  Maximize,
   Link2,
   Network,
   PanelLeftClose,
@@ -1299,6 +1302,13 @@ export default function ResearchTreeApp() {
     toggleCollapse,
     traceIds,
   ]);
+
+  const fitVisibleReasoning = useCallback(() => {
+    const flow = flowRef.current;
+    if (!flow) return;
+    const bounds = reasoningBounds(flow.getNodes(), new Set(flowNodes.map((node) => node.id)));
+    if (bounds) void flow.fitBounds(bounds, { padding: 0.18, duration: 250 });
+  }, [flowNodes]);
 
   const flowEdges = useMemo<FlowEdge[]>(() => {
     const semantic = state.edges
@@ -2554,8 +2564,17 @@ export default function ResearchTreeApp() {
                       <Background color="#cbd5dc" gap={22} size={1} />
                       <Controls
                         position="bottom-right"
+                        showFitView={false}
                         className="!overflow-hidden !rounded-lg !border-slate-200 !shadow-md"
-                      />
+                      >
+                        <ControlButton
+                          onClick={fitVisibleReasoning}
+                          aria-label={language === 'zh' ? '适应可见节点' : 'Fit visible nodes'}
+                          title={language === 'zh' ? '适应可见节点' : 'Fit visible nodes'}
+                        >
+                          <Maximize />
+                        </ControlButton>
+                      </Controls>
                       <MiniMap
                         position="bottom-left"
                         nodeColor={(node) =>

@@ -59,17 +59,6 @@ function ref(v: unknown, p: string, ids: Set<string>) {
   string(v, p, true);
   check(ids.has(v), p, `missing node "${v}"`);
 }
-const actions = [
-  'created',
-  'updated',
-  'statusChanged',
-  'impact',
-  'relationship',
-  'logicSpot',
-  'replaced',
-  'logicSpotCreated',
-  'impactRecorded',
-];
 
 /** Only recognized legacy shapes migrate. Canonical but malformed fields still fail. */
 export function migrateDocument(value: unknown): unknown {
@@ -290,7 +279,9 @@ export function validateDocument(
     object(e, p);
     uniqueId(e.id, p + '.id', logs);
     string(e.nodeId, p + '.nodeId', true);
-    check(actions.includes(String(e.action)), p + '.action', 'unknown action');
+    // History is extensible metadata, never executable behavior. Retain legacy
+    // and external action labels instead of refusing an entire workspace.
+    string(e.action, p + '.action', true);
     text(e.summary, p + '.summary');
     time(e.timestamp, p + '.timestamp');
     if (e.nodeIds !== undefined) {

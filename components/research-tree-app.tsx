@@ -1947,7 +1947,7 @@ export default function ResearchTreeApp() {
   const parentSpot = selected
     ? state.logicSpots.find((spot) => spot.parentNodeId === selected.id)
     : undefined;
-  const actionLabels = {
+  const actionLabels: Record<string, string> = {
     created: t.logCreated,
     updated: t.logUpdated,
     statusChanged: t.logStatus,
@@ -2389,6 +2389,31 @@ export default function ResearchTreeApp() {
                   </aside>
                 )}
                 <section className="relative min-w-0 flex-1 bg-[#edf2f4]">
+                  {(state.canvas?.backgroundBlocks.length ?? 0) > 0 && (
+                    <nav aria-label={language === 'zh' ? '分区导航' : 'Section navigation'}
+                      className="absolute left-3 top-3 right-3 z-20 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white/95 p-2 shadow-sm">
+                      <span className="px-1 text-sm font-semibold text-slate-600">{language === 'zh' ? '分区' : 'Sections'}</span>
+                      {state.canvas!.backgroundBlocks.map((block) => (
+                        <Button key={block.id} size="sm" variant="outline"
+                          className="max-w-full whitespace-normal text-left"
+                          style={{borderLeft: `4px solid ${block.color}`}}
+                          onClick={() => {
+                            const p = state.positions[block.id];
+                            if (!p) return;
+                            setQuery(''); setTypeFilter('all'); setStatusFilter('all'); setTraceIds(null);
+                            setSelectedId(null); setSelectedSpotId(null); setLayersOpen(false);
+                            setSelectedLayerId(block.id);
+                            // Focus the entrance at readable scale, not a tall block's full bounds.
+                            void flowRef.current?.setViewport({x: 28 - p.x * .85, y: 100 - p.y * .85, zoom: .85}, {duration: 250});
+                          }}>
+                          {block.title[language]}
+                        </Button>
+                      ))}
+                      <Button size="sm" variant="ghost" onClick={() => void flowRef.current?.fitView({padding: .12, duration: 250})}>
+                        {language === 'zh' ? '全图' : 'Overview'}
+                      </Button>
+                    </nav>
+                  )}
                   {layersOpen && (
                     <CanvasPanel
                       state={state}
@@ -2600,7 +2625,7 @@ export default function ResearchTreeApp() {
                                   variant="outline"
                                   className="bg-slate-50"
                                 >
-                                  {actionLabels[entry.action]}
+                                  {Object.hasOwn(actionLabels, entry.action) ? actionLabels[entry.action] : entry.action}
                                 </Badge>
                                 {node && (
                                   <button

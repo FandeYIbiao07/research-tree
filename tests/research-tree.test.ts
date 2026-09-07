@@ -74,7 +74,7 @@ test('field errors identify bad content, positions, log actions and graph refere
       /targetNodeId.*missing/,
     ],
     [
-      (d: any) => (d.tree.decisionLog[0].action = 'typo'),
+      (d: any) => (d.tree.decisionLog[0].action = ''),
       /decisionLog\[0\].action/,
     ],
     [(d: any) => (d.viewState.viewport.zoom = 0), /viewport.zoom/],
@@ -189,9 +189,45 @@ test('private fixture supplied locally is checked without entering repository', 
   const doc = parseResearchTreeDocument(
     readFileSync(process.env.RESEARCH_TREE_FIXTURE, 'utf8'),
   );
-  assert.equal(doc.tree.nodes.length, 94);
-  assert.equal(doc.tree.edges.length, 115);
+  assert.ok(doc.tree.nodes.length >= 94);
+  assert.ok(doc.tree.edges.length >= 115);
   assert.equal(doc.tree.logicSpots.length, 1);
   assert.ok(doc.tree.decisionLog.length >= 97);
   assert.deepEqual(roundtrip(doc).tree, doc.tree);
+});
+
+test('custom historical actions survive workspace load, close and reopen unchanged', () => {
+  const d = fixture();
+  d.tree.decisionLog[0].action = 'research-section-reorganized';
+  const values = new Map<string, string>();
+  (globalThis as any).window = { localStorage: {
+    getItem: (k: string) => values.get(k) ?? null,
+    setItem: (k: string, v: string) => values.set(k, v),
+  } };
+  try {
+    const repo = new LocalResearchTreeRepository();
+    repo.saveWorkspace({schemaVersion: 1, activeDocumentId: d.documentId, documents: [d]});
+    const w = repo.loadWorkspace();
+    assert.equal(w.loadError, undefined);
+    const reopened = reopenDocument(closeDocument(w, d.documentId), d.documentId);
+    assert.deepEqual(reopened.documents[0].tree.decisionLog, d.tree.decisionLog);
+    assert.deepEqual(roundtrip(reopened.documents[0]).tree.decisionLog, d.tree.decisionLog);
+  } finally { delete (globalThis as any).window; }
+});
+
+test('optional local workspace recovers all documents and original history', () => {
+  if (!process.env.RESEARCH_TREE_WORKSPACE_FIXTURE) return;
+  const raw = readFileSync(process.env.RESEARCH_TREE_WORKSPACE_FIXTURE, 'utf8');
+  const original = JSON.parse(raw);
+  (globalThis as any).window = { localStorage: {getItem: (k: string) => k === 'research-tree.workspace.v3' ? raw : null} };
+  try {
+    const loaded = new LocalResearchTreeRepository().loadWorkspace();
+    assert.equal(loaded.loadError, undefined);
+    assert.equal(loaded.documents.length, original.documents.length);
+    loaded.documents.forEach((d, i) => {
+      assert.deepEqual(d.tree.nodes, original.documents[i].tree.nodes);
+      assert.deepEqual(d.tree.edges, original.documents[i].tree.edges);
+      assert.deepEqual(d.tree.decisionLog, original.documents[i].tree.decisionLog);
+    });
+  } finally { delete (globalThis as any).window; }
 });

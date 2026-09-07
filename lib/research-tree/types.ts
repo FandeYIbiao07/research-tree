@@ -89,16 +89,8 @@ export type DecisionLogEntry = {
   id: string;
   nodeId: string;
   nodeIds?: string[];
-  action:
-    | 'created'
-    | 'updated'
-    | 'statusChanged'
-    | 'impact'
-    | 'relationship'
-    | 'logicSpot'
-    | 'replaced'
-    | 'logicSpotCreated'
-    | 'impactRecorded';
+  /** Non-empty historical label. Importers preserve custom actions verbatim. */
+  action: string;
   summary: LocalizedText;
   timestamp: string;
 };

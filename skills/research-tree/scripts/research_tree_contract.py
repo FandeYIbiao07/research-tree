@@ -12,7 +12,6 @@ NODE_TYPES = {'evidence', 'idea', 'hypothesis', 'assumption', 'judgement', 'deci
 NODE_STATUSES = {'confirmed', 'tentative', 'needsVerification', 'rejected', 'supersededReopened'}
 RELATIONSHIPS = {'supports', 'contradicts', 'modifies', 'replaces', 'dependsOn'}
 LOGIC_TYPES = {'any', 'all', 'exactlyOne', 'none', 'not', 'atLeastK'}
-LOG_ACTIONS = {'created', 'updated', 'statusChanged', 'impact', 'relationship', 'logicSpot', 'replaced', 'logicSpotCreated', 'impactRecorded'}
 
 
 def validate_document(data):
@@ -310,8 +309,8 @@ def validate_document(data):
             else:
                 for i, value in enumerate(references):
                     text(value, f'{path}.nodeIds[{i}]', True)
-        if entry.get('action') not in tuple(LOG_ACTIONS):
-            error(path + '.action', f'unsupported action {entry.get("action")!r}; extend the contract instead of dropping history')
+        # Action labels are historical metadata, not commands or an enum.
+        text(entry.get('action'), path + '.action', True)
         localized(entry.get('summary'), path + '.summary')
         stamp(entry.get('timestamp'), path + '.timestamp')
     return errors

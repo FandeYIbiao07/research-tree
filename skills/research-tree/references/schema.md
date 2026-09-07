@@ -143,7 +143,7 @@ Every decision log entry requires `id`, `nodeId`, `action`, bilingual `summary`,
 }
 ```
 
-`nodeId` is the primary UI anchor. Optional `nodeIds` retains every affected node, including historical nodes no longer present on the canvas. Never discard the log when a node is removed. Actions: `created`, `updated`, `statusChanged`, `impact`, `relationship`, `logicSpot`, `replaced`, `logicSpotCreated`, `impactRecorded`.
+`nodeId` is the primary UI anchor. Optional `nodeIds` retains every affected node, including historical nodes no longer present on the canvas. Never discard the log when a node is removed. `action` is a non-empty string, not a closed enumeration: preserve custom historical labels verbatim. Common generated actions include `created`, `updated`, `statusChanged`, `impact`, `relationship`, `logicSpot`, `replaced`, `logicSpotCreated`, `impactRecorded`. Action text is displayed as metadata, never executed.
 
 The app recognizes legacy project `name`/`description` only when canonical fields are absent, copying their text into both language fields without pretending to translate. It derives missing log `nodeId` from the first `nodeIds` item and retains the full original array and action. Repair generated artifacts to the canonical shape with a snapshot and repair log. Existing malformed canonical fields are errors, not a reason to substitute legacy values.
 

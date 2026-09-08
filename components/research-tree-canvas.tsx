@@ -123,7 +123,7 @@ export function CanvasPanel({
           <X />
         </Button>
       </div>
-      <div className="overflow-y-auto p-3 space-y-3">
+      <div className="min-w-0 max-w-full overflow-y-auto p-3 space-y-3">
         <Button variant="outline" className="w-full" onClick={onAdd}>
           <Plus />
           {zh ? '添加背景块' : 'Add background block'}
@@ -162,7 +162,7 @@ export function CanvasPanel({
           })}
         </div>
         <fieldset
-          className="max-h-48 overflow-y-auto rounded-md border"
+          className="min-w-0 w-full max-w-full max-h-48 overflow-x-hidden overflow-y-auto rounded-md border"
           aria-label={zh ? '图层列表' : 'Layer list'}
         >
           {order
@@ -175,13 +175,13 @@ export function CanvasPanel({
                 aria-pressed={selectedId === id}
                 onClick={() => onSelect(id)}
                 className={
-                  'flex w-full items-center gap-2 truncate border-b px-2 py-2 text-left text-sm ' +
+                  'flex min-w-0 w-full max-w-full items-center gap-2 truncate border-b px-2 py-2 text-left text-sm ' +
                   (selectedId === id ? 'bg-teal-100' : 'hover:bg-slate-50')
                 }
               >
-                <span>{blocks.some((b) => b.id === id) ? '▧' : '◇'}</span>
-                <span className="truncate">{label(id)}</span>
-                {blocks.find((b) => b.id === id)?.locked && <Lock size={12} />}
+                <span className="shrink-0">{blocks.some((b) => b.id === id) ? '▧' : '◇'}</span>
+                <span className="min-w-0 flex-1 truncate">{label(id)}</span>
+                {blocks.find((b) => b.id === id)?.locked && <Lock className="shrink-0" size={12} />}
               </button>
             ))}
         </fieldset>
